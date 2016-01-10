@@ -139,29 +139,26 @@ class ScryptKeyMaterializer(KeyMaterializer):
 
 
 class Transformer(object):
-    def __init__(self, outfd, size):
-        self.outfd = outfd
+    def __init__(self, size):
         self.size = size
 
-    def transform(self, obj):
+    def transform(self, obj, outfd):
         for out in obj.get_all_bytes(self.size):
-            self.outfd.write(out)
+            outfd.write(out)
 
 
 
 class HexTransformer(Transformer):
-    def __init__(self, outfd, size):
-        self.outfd = outfd
+    def __init__(self, size):
         self.size = size
 
-    def transform(self, obj):
+    def transform(self, obj, outfd):
         for out in obj.get_all_bytes(self.size):
-            self.outfd.write(binascii.hexlify(out))
+            outfd.write(binascii.hexlify(out))
 
 
 class IntegerTransformer(Transformer):
-    def __init__(self, outfd, num, bound):
-        self.outfd = outfd
+    def __init__(self, num, bound):
         self.num = num
 
         if '-' in bound:
@@ -173,7 +170,7 @@ class IntegerTransformer(Transformer):
 
         #self.upper = upper
 
-    def transform(self, obj):
+    def transform(self, obj, outfd):
         # XXX: This can be improved. See OpenSSL BN_rand_range()
         for i in range(self.num):
 
@@ -181,37 +178,36 @@ class IntegerTransformer(Transformer):
             while integer >= self.upper:
                 integer = self.lower + ba2int(obj.get_bits(self.upper.bit_length()))
 
-            print >> self.outfd, integer
+            print >> outfd, integer
 
 
 class XorTransformer(Transformer):
-    def __init__(self, size, infd, outfd, inplace):
+    def __init__(self, size, infd, inplace):
         self.size = size
         self.infd = infd
-        self.outfd = outfd
         self.inplace = inplace
 
-    def transform(self, obj):
+    def transform(self, obj, outfd):
         for out in obj.get_all_bytes(self.size):
 
             if self.inplace:
-                file_pos = self.outfd.tell()
-                content = bytearray(self.outfd.read(len(out)))
-                self.outfd.seek(file_pos, 0)
+                file_pos = outfd.tell()
+                content = bytearray(outfd.read(len(out)))
+                outfd.seek(file_pos, 0)
                 new_content = (xorstr(out, content))
                 out = new_content
             else:
                 content = bytearray(self.infd.read(len(out)))
                 out = xorstr(out, content)
 
-            self.outfd.write(out)
+            outfd.write(out)
 
         if not self.inplace:
             while True:
                 content = self.infd.read(4096)
                 if not content:
                     break
-                self.outfd.write(content)
+                outfd.write(content)
 
 
 def main():
@@ -293,15 +289,15 @@ def main():
     else:
         outfd = file(args.output, 'w')
 
-    transformer = Transformer(outfd, size)
+    transformer = Transformer(size)
     if args.hex:
-        transformer = HexTransformer(outfd, size)
+        transformer = HexTransformer(size)
     elif args.xor:
-        transformer = XorTransformer(size, xorfd, outfd, inplace_write)
+        transformer = XorTransformer(size, xorfd, inplace_write)
     elif args.integer:
-        transformer = IntegerTransformer(outfd, args.num, args.integer)
+        transformer = IntegerTransformer(args.num, args.integer)
 
-    transformer.transform(source)
+    transformer.transform(source, outfd)
 
     sys.exit(0)
 
