@@ -265,7 +265,7 @@ def main():
             key = scrypt_buf[0:16]
             iv = bytearray(scrypt_buf[16:32])
         else:
-            argon2_buf = argon2.argon2_hash(passw, salt, buflen=32)
+            argon2_buf = argon2.argon2_hash(passw, salt[0:16], t=32, m=12, p=1, buflen=32)
             key = argon2_buf[0:16]
             iv = bytearray(argon2_buf[16:32])
 
