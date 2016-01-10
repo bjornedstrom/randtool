@@ -218,33 +218,29 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-n', '--num', type=int, metavar='NUM', help='output size')
     parser.add_argument('-o', '--output', metavar='PATH|inplace', help='output to write [stdout]', default='-')
-    #parser.add_argument('-i', '--input', metavar='PATH', help='input to read')
 
     transformers_group = parser.add_argument_group('transformers')
-
-    transformers_group.add_argument('-x', '--xor', metavar='PATH', help='data encryption (use -p)')
+    transformers_group.add_argument(
+        '-x', '--xor', metavar='PATH', help='data encryption (use -p)')
 
     transformers_group.add_argument('-H', '--hex', action='store_true',
-                        help='output as hex string')
+                                    help='output as hex string')
     transformers_group.add_argument('-B', '--base64', action='store_true',
-                        help='output as base64 string')
-    transformers_group.add_argument('-P', '--passw', action='store_true',
-                        help='output as password')
+                                    help='output as base64 string')
     transformers_group.add_argument('-I', '--integer',
-                        help='output as integers')
+                                    help='output as integers')
 
     sources_group = parser.add_argument_group('randomness sources')
     sources_group.add_argument('-r', '--random', action='store_true',
-                        help='use non-deterministic randomness')
+                               help='use non-deterministic randomness')
     sources_group.add_argument('-s', '--seed', metavar='SEED',
-                        help='use randomness from seed')
+                               help='use randomness from seed')
     sources_group.add_argument('-p', '--password', action='store_true',
-                        help='use randomness seeded by strengthened password/salt')
-
-    sources_group.add_argument('--salt', metavar='SALT', default='randtool', help='salt used to contextualize password strenghtening [%(default)s]')
-
+                               help='use randomness seeded by strengthened password/salt')
+    sources_group.add_argument('--salt', metavar='SALT', default='randtool',
+                               help='salt used to contextualize password strenghtening [%(default)s]')
     sources_group.add_argument('--suite', default='argon2-aes-ctr',
-                        help='crypto suite to use [%(default)s]')
+                               help='crypto suite to use [%(default)s]')
     args = parser.parse_args()
     #print args
 
@@ -298,14 +294,6 @@ def main():
     else:
         outfd = file(args.output, 'w')
 
-    #ctr = 0
-    #while size > 0:
-    #    chunk = min(size, 16)
-
-    #    tmp = bytearray(aes.encrypt(buffer(xorstr(counter(ctr), iv))))
-
-    #    out = bytearray(tmp[0:chunk])
-
     transformer = Filter(outfd, size)
     if args.hex:
         transformer = HexFilter(outfd, size)
@@ -314,39 +302,9 @@ def main():
     elif args.integer:
         transformer = IntegerFilter(outfd, args.num, args.integer)
 
-
     transformer.transform(aes)
 
-    """
-    for out in aes.get_all_bytes(size):
-
-        if args.hex:
-            out = binascii.hexlify(out)
-        elif args.passw:
-            out = base64.urlsafe_b64encode(out[0:15])
-        elif args.xor:
-            if inplace_write:
-                file_pos = outfd.tell()
-                content = bytearray(outfd.read(len(out)))
-                outfd.seek(file_pos, 0)
-                new_content = (xorstr(out, content))
-                out = new_content
-            else:
-                content = bytearray(xorfd.read(len(out)))
-                out = xorstr(out, content)
-
-        outfd.write(out)
-
-        #ctr += 1
-        #size -= 16
-
-    if args.xor and args.output != 'inplace':
-        while True:
-            content = xorfd.read(4096)
-            if not content:
-                break
-            outfd.write(content)
-    """
+    sys.exit(0)
 
 
 if __name__ == '__main__':

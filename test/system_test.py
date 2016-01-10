@@ -41,6 +41,9 @@ class SystemTest(unittest.TestCase):
         self.assertEquals(b'yh1m\xd1r\xe4m\xc0\xc8\xe8\x1dz\x98%\xa9\x94\xf7g\xa0', out)
         self.assertEquals('', err)
 
+    def test_password_source(self):
+        raise NotImplementedError('fixme')
+
     def test_xor(self):
         plaintext = b'foo bar test abcdef 1234567'
         with file('/tmp/randtool.xortest', 'w') as fobj:
