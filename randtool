@@ -91,6 +91,12 @@ class Source(object):
             yield block[0:chunk]
             num -= self.BLOCK_SIZE
 
+    def get_integer(self, upper):
+        integer = upper
+        while integer >= upper:
+            integer = ba2int(self.get_bits(upper.bit_length()))
+        return integer
+
 
 class AESCounterMode(Source):
     BLOCK_SIZE = 16
@@ -178,11 +184,7 @@ class IntegerTransformer(Transformer):
     def transform(self, obj, outfd):
         # XXX: This can be improved. See OpenSSL BN_rand_range()
         for i in range(self.num):
-
-            integer = self.upper
-            while integer >= self.upper:
-                integer = self.lower + ba2int(obj.get_bits(self.upper.bit_length()))
-
+            integer = self.lower + obj.get_integer(self.upper - self.lower)
             outfd.write(('%s\n' % (integer,)).encode('utf-8'))
 
 
@@ -192,10 +194,7 @@ class ChoiceTransformer(Transformer):
         self.upper = len(choices)
 
     def transform(self, obj, outfd):
-        integer = self.upper
-        while integer >= self.upper:
-            integer = ba2int(obj.get_bits(self.upper.bit_length()))
-
+        integer = obj.get_integer(self.upper)
         outfd.write(('%s\n' % (self.choices[integer],)).encode('utf-8'))
 
 
