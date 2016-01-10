@@ -138,7 +138,7 @@ class ScryptKeyMaterializer(KeyMaterializer):
         #self.iv = bytearray(scrypt_buf[16:32])
 
 
-class Filter(object):
+class Transformer(object):
     def __init__(self, outfd, size):
         self.outfd = outfd
         self.size = size
@@ -149,7 +149,7 @@ class Filter(object):
 
 
 
-class HexFilter(Filter):
+class HexTransformer(Transformer):
     def __init__(self, outfd, size):
         self.outfd = outfd
         self.size = size
@@ -159,7 +159,7 @@ class HexFilter(Filter):
             self.outfd.write(binascii.hexlify(out))
 
 
-class IntegerFilter(Filter):
+class IntegerTransformer(Transformer):
     def __init__(self, outfd, num, bound):
         self.outfd = outfd
         self.num = num
@@ -184,7 +184,7 @@ class IntegerFilter(Filter):
             print >> self.outfd, integer
 
 
-class XorFilter(Filter):
+class XorTransformer(Transformer):
     def __init__(self, size, infd, outfd, inplace):
         self.size = size
         self.infd = infd
@@ -248,7 +248,7 @@ def main():
         parser.error('one of --random, --seed, --pass required')
 
     if args.random:
-        aes = URandom()
+        source = URandom()
     else:
         # Set up crypto stuff.
         if args.seed:
@@ -264,9 +264,8 @@ def main():
             argon2_buf = argon2.argon2_hash(passw, salt, buflen=32)
             key = argon2_buf[0:16]
             iv = bytearray(argon2_buf[16:32])
-        #aes = AES.new(key)
 
-        aes = AESCounterMode(key, iv)
+        source = AESCounterMode(key, iv)
 
     # Figure out output size
     if args.num:
@@ -294,15 +293,15 @@ def main():
     else:
         outfd = file(args.output, 'w')
 
-    transformer = Filter(outfd, size)
+    transformer = Transformer(outfd, size)
     if args.hex:
-        transformer = HexFilter(outfd, size)
+        transformer = HexTransformer(outfd, size)
     elif args.xor:
-        transformer = XorFilter(size, xorfd, outfd, inplace_write)
+        transformer = XorTransformer(size, xorfd, outfd, inplace_write)
     elif args.integer:
-        transformer = IntegerFilter(outfd, args.num, args.integer)
+        transformer = IntegerTransformer(outfd, args.num, args.integer)
 
-    transformer.transform(aes)
+    transformer.transform(source)
 
     sys.exit(0)
 
