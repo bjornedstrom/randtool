@@ -7,6 +7,10 @@
 
 `randtool` can be used in dangerous ways if you are not careful. Please only use this program if you know what you are doing. :-)
 
+## Install
+
+    pip install {argon2,pycrypto,scrypt} # virtualenv recommended
+
 ## Sources and Transformers
 
 `randtool` uses so called *sources* and *transformers* to solve problems. A source is a way of creating bulk random data. A transformer takes this bulk data and transforms it before outputting.
