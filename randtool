@@ -79,7 +79,7 @@ class Source(object):
     def get_bits(self, n):
         # Note: this will waste some bits.
 
-        bytes = self.get_bytes((n + 7) / 8)
+        bytes = self.get_bytes((n + 7) // 8)
         upper_mask = 2 ** (n % 8) - 1
         bytes[0] &= upper_mask
         return bytes
@@ -105,7 +105,7 @@ class AESCounterMode(Source):
 
     def get_block(self):
         try:
-            return bytearray(self.aes.encrypt(buffer(self.ctr)))
+            return bytearray(self.aes.encrypt(bytes(self.ctr)))
         finally:
             inc_bytarray(self.ctr, wrap=True)
 
@@ -172,7 +172,7 @@ class IntegerTransformer(Transformer):
             else:
                 self.lower = 0
                 self.upper = int(bound)
-        except Exception, e:
+        except Exception as e:
             raise Exception('parse error: %s' % (bound,))
 
     def transform(self, obj, outfd):
@@ -183,7 +183,7 @@ class IntegerTransformer(Transformer):
             while integer >= self.upper:
                 integer = self.lower + ba2int(obj.get_bits(self.upper.bit_length()))
 
-            print >> outfd, integer
+            outfd.write(('%s\n' % (integer,)).encode('utf-8'))
 
 
 class XorTransformer(Transformer):
@@ -256,7 +256,7 @@ def main():
             passw = args.seed
         else:
             passw = getpass.getpass('Password: ')
-        salt = hashlib.sha256(args.salt).digest()
+        salt = hashlib.sha256(args.salt.encode('utf-8')).digest()
         if 'scrypt' in args.suite and HAS_SCRYPT:
             scrypt_buf = scrypt.hash(passw, salt, N=2**16, buflen=32)
             key = scrypt_buf[0:16]
@@ -280,19 +280,22 @@ def main():
     if args.xor:
         if args.random:
             parser.error('--xor with --random is ill advised')
-        xorfd = file(args.xor, 'r+')
+        xorfd = open(args.xor, 'r+b')
 
     # Figure out file to write
     inplace_write = False
     if args.output == '-':
-        outfd = sys.stdout
+        if sys.version_info[0] >= 3:
+            outfd = sys.stdout.buffer
+        else:
+            outfd = sys.stdout
     elif args.output == 'inplace':
         if not args.xor:
             parser.error('-o inplace requires -x')
         outfd = xorfd
         inplace_write = True
     else:
-        outfd = file(args.output, 'w')
+        outfd = open(args.output, 'wb')
 
     try:
         transformer = Transformer(size)
@@ -302,7 +305,7 @@ def main():
             transformer = XorTransformer(size, xorfd, inplace_write)
         elif args.integer:
             transformer = IntegerTransformer(args.num, args.integer)
-    except Exception, e:
+    except Exception as e:
         parser.error(e)
 
     transformer.transform(source, outfd)
