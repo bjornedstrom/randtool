@@ -1,0 +1,353 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# Copyright (C) 2016 by Björn Edström <be@bjrn.se>
+# See LICENSE for details.
+
+import Crypto.Cipher.AES as AES
+import argon2
+import argparse
+import base64
+import binascii
+import hashlib
+import getpass
+import os
+import scrypt
+import struct
+import sys
+
+
+def inc_bytarray(arr, wrap=False):
+    pos = -1
+    while True:
+        try:
+            arr[pos] += 1
+            break
+        except ValueError:
+            arr[pos] = 0
+            pos -= 1
+        except IndexError:
+            if wrap:
+                arr = bytearray(len(arr))
+                break
+            else:
+                raise ValueError('at max value')
+    return arr
+
+
+def xorstr(a, b):
+    c = bytearray()
+    for i in range(len(a)):
+        c.append(a[i] ^ b[i])
+    return c
+
+
+def counter(i):
+    assert i < 2**64
+    return bytearray(struct.pack('!QQ', 0, i))
+
+
+def ba2int(ba):
+    i = 0
+    for b in ba:
+        i <<= 8
+        i |= b
+    return i
+
+
+class Maker(object):
+    pass
+
+
+class Source(object):
+    def __init__(self):
+        self.buf = bytearray(0)
+
+    def get_bytes(self, n):
+        # buffer up
+        while len(self.buf) < n:
+            self.buf += self.get_block()
+
+        try:
+            return self.buf[0:n]
+        finally:
+            self.buf = self.buf[n:]
+
+    def get_bits(self, n):
+        # Note: this will waste some bits.
+
+        bytes = self.get_bytes((n + 7) / 8)
+        upper_mask = 2 ** (n % 8) - 1
+        bytes[0] &= upper_mask
+        return bytes
+
+    def get_all_bytes(self, num):
+        while num > 0:
+            chunk = min(num, self.BLOCK_SIZE)
+            block = self.get_block()
+            yield block[0:chunk]
+            num -= self.BLOCK_SIZE
+
+
+class AESCounterMode(Source):
+    BLOCK_SIZE = 16
+
+    def __init__(self, key, iv):
+        Source.__init__(self)
+
+        self.key = key
+        self.iv = iv
+        self.ctr = bytearray(iv)
+        self.aes = AES.new(key)
+
+    def get_block(self):
+        try:
+            return bytearray(self.aes.encrypt(buffer(self.ctr)))
+        finally:
+            inc_bytarray(self.ctr, wrap=True)
+
+
+class URandom(Source):
+    BLOCK_SIZE = 16
+
+    def __init__(self):
+        Source.__init__(self)
+
+    def get_block(self):
+        return os.urandom(self.BLOCK_SIZE)
+
+
+class KeyMaterializer(object):
+    def __init__(self):
+        self.key = None
+        self.salt = None
+
+
+class ScryptKeyMaterializer(KeyMaterializer):
+    NAME = 'scrypt'
+    ARGS = ['salt']
+    PASSWORD = True
+
+    def __init__(self):
+        KeyMaterializer.__init__(self)
+
+    def materialize(self, args, num):
+        passw = getpass.getpass('Password: ')
+        salt = args.salt
+        scrypt_buf = scrypt.hash(passw, salt, N=2**16, buflen=num)
+        #self.key = scrypt_buf[0:16]
+        #self.iv = bytearray(scrypt_buf[16:32])
+
+
+class Filter(object):
+    def __init__(self, outfd, size):
+        self.outfd = outfd
+        self.size = size
+
+    def transform(self, obj):
+        for out in obj.get_all_bytes(self.size):
+            self.outfd.write(out)
+
+
+
+class HexFilter(Filter):
+    def __init__(self, outfd, size):
+        self.outfd = outfd
+        self.size = size
+
+    def transform(self, obj):
+        for out in obj.get_all_bytes(self.size):
+            self.outfd.write(binascii.hexlify(out))
+
+
+class IntegerFilter(Filter):
+    def __init__(self, outfd, num, bound):
+        self.outfd = outfd
+        self.num = num
+
+        if '-' in bound:
+            bound_str = bound.split('-')
+            self.lower, self.upper = int(bound_str[0]), int(bound_str[1])
+        else:
+            self.lower = 0
+            self.upper = int(bound)
+
+        #self.upper = upper
+
+    def transform(self, obj):
+        # XXX: This can be improved. See OpenSSL BN_rand_range()
+        for i in range(self.num):
+
+            integer = self.upper
+            while integer >= self.upper:
+                integer = self.lower + ba2int(obj.get_bits(self.upper.bit_length()))
+
+            print >> self.outfd, integer
+
+
+class XorFilter(Filter):
+    def __init__(self, size, infd, outfd, inplace):
+        self.size = size
+        self.infd = infd
+        self.outfd = outfd
+        self.inplace = inplace
+
+    def transform(self, obj):
+        for out in obj.get_all_bytes(self.size):
+
+            if self.inplace:
+                file_pos = self.outfd.tell()
+                content = bytearray(self.outfd.read(len(out)))
+                self.outfd.seek(file_pos, 0)
+                new_content = (xorstr(out, content))
+                out = new_content
+            else:
+                content = bytearray(self.infd.read(len(out)))
+                out = xorstr(out, content)
+
+            self.outfd.write(out)
+
+        if not self.inplace:
+            while True:
+                content = self.infd.read(4096)
+                if not content:
+                    break
+                self.outfd.write(content)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-n', '--num', type=int, metavar='NUM', help='output size')
+    parser.add_argument('-o', '--output', metavar='PATH|inplace', help='output to write [stdout]', default='-')
+    #parser.add_argument('-i', '--input', metavar='PATH', help='input to read')
+
+    transformers_group = parser.add_argument_group('transformers')
+
+    transformers_group.add_argument('-x', '--xor', metavar='PATH', help='data encryption (use -p)')
+
+    transformers_group.add_argument('-H', '--hex', action='store_true',
+                        help='output as hex string')
+    transformers_group.add_argument('-B', '--base64', action='store_true',
+                        help='output as base64 string')
+    transformers_group.add_argument('-P', '--passw', action='store_true',
+                        help='output as password')
+    transformers_group.add_argument('-I', '--integer',
+                        help='output as integers')
+
+    sources_group = parser.add_argument_group('randomness sources')
+    sources_group.add_argument('-r', '--random', action='store_true',
+                        help='use non-deterministic randomness')
+    sources_group.add_argument('-s', '--seed', metavar='SEED',
+                        help='use randomness from seed')
+    sources_group.add_argument('-p', '--password', action='store_true',
+                        help='use randomness seeded by strengthened password/salt')
+
+    sources_group.add_argument('--salt', metavar='SALT', default='randtool', help='salt used to contextualize password strenghtening [%(default)s]')
+
+    sources_group.add_argument('--suite', default='argon2-aes-ctr',
+                        help='crypto suite to use [%(default)s]')
+    args = parser.parse_args()
+    #print args
+
+    if not any((args.random, args.seed, args.password)):
+        parser.error('one of --random, --seed, --pass required')
+
+    if args.random:
+        aes = URandom()
+    else:
+        # Set up crypto stuff.
+        if args.seed:
+            passw = args.seed
+        else:
+            passw = getpass.getpass('Password: ')
+        salt = hashlib.sha256(args.salt).digest()
+        if 'scrypt' in args.suite:
+            scrypt_buf = scrypt.hash(passw, salt, N=2**16, buflen=32)
+            key = scrypt_buf[0:16]
+            iv = bytearray(scrypt_buf[16:32])
+        else:
+            argon2_buf = argon2.argon2_hash(passw, salt, buflen=32)
+            key = argon2_buf[0:16]
+            iv = bytearray(argon2_buf[16:32])
+        #aes = AES.new(key)
+
+        aes = AESCounterMode(key, iv)
+
+    # Figure out output size
+    if args.num:
+        size = args.num
+    elif args.xor:
+        size = os.stat(args.xor).st_size
+    else:
+        parser.error('no --num given')
+
+    #
+    if args.xor:
+        if args.random:
+            parser.error('--xor with --random is ill advised')
+        xorfd = file(args.xor, 'r+')
+
+    # Figure out file to write
+    inplace_write = False
+    if args.output == '-':
+        outfd = sys.stdout
+    elif args.output == 'inplace':
+        if not args.xor:
+            parser.error('-o inplace requires -x')
+        outfd = xorfd
+        inplace_write = True
+    else:
+        outfd = file(args.output, 'w')
+
+    #ctr = 0
+    #while size > 0:
+    #    chunk = min(size, 16)
+
+    #    tmp = bytearray(aes.encrypt(buffer(xorstr(counter(ctr), iv))))
+
+    #    out = bytearray(tmp[0:chunk])
+
+    transformer = Filter(outfd, size)
+    if args.hex:
+        transformer = HexFilter(outfd, size)
+    elif args.xor:
+        transformer = XorFilter(size, xorfd, outfd, inplace_write)
+    elif args.integer:
+        transformer = IntegerFilter(outfd, args.num, args.integer)
+
+
+    transformer.transform(aes)
+
+    """
+    for out in aes.get_all_bytes(size):
+
+        if args.hex:
+            out = binascii.hexlify(out)
+        elif args.passw:
+            out = base64.urlsafe_b64encode(out[0:15])
+        elif args.xor:
+            if inplace_write:
+                file_pos = outfd.tell()
+                content = bytearray(outfd.read(len(out)))
+                outfd.seek(file_pos, 0)
+                new_content = (xorstr(out, content))
+                out = new_content
+            else:
+                content = bytearray(xorfd.read(len(out)))
+                out = xorstr(out, content)
+
+        outfd.write(out)
+
+        #ctr += 1
+        #size -= 16
+
+    if args.xor and args.output != 'inplace':
+        while True:
+            content = xorfd.read(4096)
+            if not content:
+                break
+            outfd.write(content)
+    """
+
+
+if __name__ == '__main__':
+    main()
