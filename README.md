@@ -59,6 +59,13 @@ Create 5 integers in the range [0, 100):
     95
     80
 
+### The Choice Transformer
+
+Select from a set of choices:
+
+    $ randtool -r -C 'Ardbeg 10' 'Tomintoul 14' 'Glen Scotia 18'
+    Tomintoul 14
+
 ### The Password Recipe
 
 The password-protected source together with the nop transformer and the `--salt` option can bse used to derive domain specific passwords from a "master" password:

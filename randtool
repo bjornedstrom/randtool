@@ -186,6 +186,19 @@ class IntegerTransformer(Transformer):
             outfd.write(('%s\n' % (integer,)).encode('utf-8'))
 
 
+class ChoiceTransformer(Transformer):
+    def __init__(self, choices):
+        self.choices = choices
+        self.upper = len(choices)
+
+    def transform(self, obj, outfd):
+        integer = self.upper
+        while integer >= self.upper:
+            integer = ba2int(obj.get_bits(self.upper.bit_length()))
+
+        outfd.write(('%s\n' % (self.choices[integer],)).encode('utf-8'))
+
+
 class XorTransformer(Transformer):
     def __init__(self, size, infd, inplace):
         self.size = size
@@ -237,6 +250,8 @@ def main():
 
     parser.add_argument('-n', '--num', type=int, metavar='NUM', help='output size')
     parser.add_argument('-o', '--output', metavar='PATH|inplace', help='output to write [stdout]', default='-')
+    parser.add_argument('args', metavar='ARGS', nargs='*',
+                   help='arguments')
 
     transformers_group = parser.add_argument_group('transformers')
     transformers_group.add_argument(
@@ -244,9 +259,9 @@ def main():
 
     transformers_group.add_argument('-H', '--hex', action='store_true',
                                     help='output as hex string')
-    transformers_group.add_argument('-B', '--base64', action='store_true',
-                                    help='output as base64 string')
     transformers_group.add_argument('-I', '--integer',
+                                    help='output as integers')
+    transformers_group.add_argument('-C', '--choice', action='store_true',
                                     help='output as integers')
 
     sources_opt_group.add_argument('--salt', metavar='SALT', default='randtool',
@@ -301,6 +316,9 @@ def main():
         size = args.num
     elif args.xor:
         size = os.stat(args.xor).st_size
+    elif args.choice:
+        if not args.args:
+            parser.error('no arguments given')
     else:
         parser.error('no --num given')
 
@@ -326,13 +344,16 @@ def main():
         outfd = open(args.output, 'wb')
 
     try:
-        transformer = Transformer(size)
         if args.hex:
             transformer = HexTransformer(size)
         elif args.xor:
             transformer = XorTransformer(size, xorfd, inplace_write)
         elif args.integer:
             transformer = IntegerTransformer(args.num, args.integer)
+        elif args.choice:
+            transformer = ChoiceTransformer(args.args)
+        else:
+            transformer = Transformer(size)
     except Exception as e:
         parser.error(e)
 
