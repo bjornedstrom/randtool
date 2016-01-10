@@ -215,8 +215,26 @@ class XorTransformer(Transformer):
                 outfd.write(content)
 
 
+def parse_phc_params(params):
+    res = {}
+    for field in params.split(','):
+        k,v = field.split('=')
+        res[k] = int(v)
+    return res
+
+
 def main():
     parser = argparse.ArgumentParser()
+
+    sources_opt_group = parser.add_argument_group('randomness sources')
+    sources_group = sources_opt_group.add_mutually_exclusive_group(required=True)
+    sources_group.add_argument('-r', '--random', action='store_true',
+                               help='use non-deterministic randomness')
+    sources_group.add_argument('-s', '--seed', metavar='SEED',
+                               help='use randomness from seed')
+    sources_group.add_argument('-p', '--password', action='store_true',
+                               help='use randomness seeded by strengthened password/salt')
+
     parser.add_argument('-n', '--num', type=int, metavar='NUM', help='output size')
     parser.add_argument('-o', '--output', metavar='PATH|inplace', help='output to write [stdout]', default='-')
 
@@ -231,25 +249,19 @@ def main():
     transformers_group.add_argument('-I', '--integer',
                                     help='output as integers')
 
-    sources_group = parser.add_argument_group('randomness sources')
-    sources_group.add_argument('-r', '--random', action='store_true',
-                               help='use non-deterministic randomness')
-    sources_group.add_argument('-s', '--seed', metavar='SEED',
-                               help='use randomness from seed')
-    sources_group.add_argument('-p', '--password', action='store_true',
-                               help='use randomness seeded by strengthened password/salt')
-    sources_group.add_argument('--salt', metavar='SALT', default='randtool',
-                               help='salt used to contextualize password strenghtening [%(default)s]')
+    sources_opt_group.add_argument('--salt', metavar='SALT', default='randtool',
+                                   help='salt used to contextualize password strenghtening [%(default)s]')
     ph_alg_choices = ['argon2i']
     if HAS_SCRYPT:
         ph_alg_choices.append('scrypt')
-    sources_group.add_argument('--ph-alg', default='argon2i', choices=ph_alg_choices,
-                               help='password hashing algorithm to use [%(default)s]')
-    args = parser.parse_args()
-    #print args
+    sources_opt_group.add_argument('--ph-alg', default='argon2i', choices=ph_alg_choices,
+                                   help='password hashing algorithm to use [%(default)s]')
+    sources_opt_group.add_argument('--argon2i-params', metavar='PARAMS', default='t=32,m=12,p=1',
+                                   help='argon2i parameters [%(default)s]')
+    sources_opt_group.add_argument('--scrypt-params', metavar='PARAMS', default='N=16',
+                                   help='scrypt parameters [%(default)s]')
 
-    if not any((args.random, args.seed, args.password)):
-        parser.error('one of --random, --seed, --pass required')
+    args = parser.parse_args()
 
     if args.random:
         source = URandom()
@@ -260,12 +272,25 @@ def main():
         else:
             passw = getpass.getpass('Password: ')
         salt = hashlib.sha256(args.salt.encode('utf-8')).digest()
+
+        # Set up PHC
+        use_argon2i = not ('scrypt' == args.ph_alg and HAS_SCRYPT)
+
+        try:
+            if use_argon2i:
+                params = parse_phc_params(args.argon2i_params)
+            else:
+                params = parse_phc_params(args.scrypt_params)
+
+        except Exception as e:
+            parser.error('parse error: %s' % (args.argon2i_params if use_argon2i else args.scrypt_params,))
+
         if 'scrypt' == args.ph_alg and HAS_SCRYPT:
-            scrypt_buf = scrypt.hash(passw, salt, N=2**16, buflen=32)
+            scrypt_buf = scrypt.hash(passw, salt, N=2**params['N'], buflen=32)
             key = scrypt_buf[0:16]
             iv = bytearray(scrypt_buf[16:32])
         else:
-            argon2_buf = argon2.argon2_hash(passw, salt[0:16], t=32, m=12, p=1, buflen=32)
+            argon2_buf = argon2.argon2_hash(passw, salt[0:16], t=params['t'], m=params['m'], p=params['p'], buflen=32)
             key = argon2_buf[0:16]
             iv = bytearray(argon2_buf[16:32])
 
