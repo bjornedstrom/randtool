@@ -240,8 +240,11 @@ def main():
                                help='use randomness seeded by strengthened password/salt')
     sources_group.add_argument('--salt', metavar='SALT', default='randtool',
                                help='salt used to contextualize password strenghtening [%(default)s]')
-    sources_group.add_argument('--suite', default='argon2-aes-ctr',
-                               help='crypto suite to use [%(default)s]')
+    ph_alg_choices = ['argon2i']
+    if HAS_SCRYPT:
+        ph_alg_choices.append('scrypt')
+    sources_group.add_argument('--ph-alg', default='argon2i', choices=ph_alg_choices,
+                               help='password hashing algorithm to use [%(default)s]')
     args = parser.parse_args()
     #print args
 
@@ -257,7 +260,7 @@ def main():
         else:
             passw = getpass.getpass('Password: ')
         salt = hashlib.sha256(args.salt.encode('utf-8')).digest()
-        if 'scrypt' in args.suite and HAS_SCRYPT:
+        if 'scrypt' == args.ph_alg and HAS_SCRYPT:
             scrypt_buf = scrypt.hash(passw, salt, N=2**16, buflen=32)
             key = scrypt_buf[0:16]
             iv = bytearray(scrypt_buf[16:32])
