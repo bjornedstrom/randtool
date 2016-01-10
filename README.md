@@ -59,6 +59,11 @@ Create 5 integers in the range [0, 100):
     95
     80
 
+Roll a dice:
+
+    $ randtool -r -I1-7 -n1
+    6
+
 ### The Choice Transformer
 
 Select from a set of choices:
