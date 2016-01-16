@@ -97,6 +97,12 @@ class Source(object):
             integer = ba2int(self.get_bits(upper.bit_length()))
         return integer
 
+    def get_float(self):
+        # From python random.py
+        BPF = 53
+        RECIP_BPF = 2**-BPF
+        return (int(binascii.hexlify(self.get_bytes(7)), 16) >> 3) * RECIP_BPF
+
 
 class AESCounterMode(Source):
     BLOCK_SIZE = 16
@@ -188,6 +194,16 @@ class IntegerTransformer(Transformer):
             outfd.write(('%s\n' % (integer,)).encode('utf-8'))
 
 
+class FloatTransformer(Transformer):
+    def __init__(self, num):
+        self.num = num
+
+    def transform(self, obj, outfd):
+        for i in range(self.num):
+            random_float = obj.get_float()
+            outfd.write(('%s\n' % (random_float,)).encode('utf-8'))
+
+
 class ChoiceTransformer(Transformer):
     def __init__(self, choices):
         self.choices = choices
@@ -260,6 +276,8 @@ def main():
                                     help='output as hex string')
     transformers_group.add_argument('-I', '--integer',
                                     help='output as integers')
+    transformers_group.add_argument('-F', '--float', action='store_true',
+                                    help='output as floats [0,1)')
     transformers_group.add_argument('-C', '--choice', action='store_true',
                                     help='output as integers')
 
@@ -349,6 +367,8 @@ def main():
             transformer = XorTransformer(size, xorfd, inplace_write)
         elif args.integer:
             transformer = IntegerTransformer(args.num, args.integer)
+        elif args.float:
+            transformer = FloatTransformer(args.num)
         elif args.choice:
             transformer = ChoiceTransformer(args.args)
         else:
