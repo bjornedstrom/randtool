@@ -9,7 +9,7 @@
 
 ## Install
 
-    pip install {argon2,pycrypto,scrypt} # virtualenv recommended
+    pip install {argon2,pycrypto,scrypt,six} # virtualenv recommended
 
 ## Sources and Transformers
 

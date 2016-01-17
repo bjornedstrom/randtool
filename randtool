@@ -16,6 +16,7 @@ try:
     HAS_SCRYPT = True
 except ImportError:
     HAS_SCRYPT = False
+import six
 import struct
 import sys
 
@@ -348,10 +349,12 @@ def main():
     # Figure out file to write
     inplace_write = False
     if args.output == '-':
-        if sys.version_info[0] >= 3:
+        if six.PY3:
             outfd = sys.stdout.buffer
-        else:
+        elif six.PY2:
             outfd = sys.stdout
+        else:
+            assert False
     elif args.output == 'inplace':
         if not args.xor:
             parser.error('-o inplace requires -x')
